@@ -1,6 +1,6 @@
 use grammers_client::Client;
 use grammers_client::types::Chat;
-use log::info;
+use log::{debug, info};
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use tokio::time::{Duration, sleep};
@@ -20,9 +20,14 @@ impl MyUser {
     }
 }
 
+pub fn filepath_from_chat(chat: &Chat) -> String {
+    return format!("csv/{chat_id}.csv", chat_id = chat.id()); // TODO: refactor into Path or sim.
+}
+
 pub async fn generate_csv(client: &Client, chat: &Chat) -> Result<(), Box<dyn Error>> {
     // 4. Export participants to CSV
-    let csv_filepath = format!("{chat_name}.csv", chat_name = chat.name()); // TODO: make it id, not name, to avoid emojis being a problem
+    let csv_filepath = filepath_from_chat(chat);
+    debug!("Generating {path}", path = &csv_filepath);
     let mut wtr = csv::Writer::from_path(&csv_filepath)?;
 
     // the csv header is used automatically when serializing from a struct
@@ -43,15 +48,22 @@ pub async fn generate_csv(client: &Client, chat: &Chat) -> Result<(), Box<dyn Er
     return Ok(());
 }
 
-pub fn parse_pings_from_file(filepath: &str) -> Result<String, Box<dyn Error>> {
+pub fn parse_pings_of_chat(chat: &Chat) -> Result<String, Box<dyn Error>> {
     // 5. Read CSV and ping each user
-    let mut result_message = String::new(); // the final message with space-separated mentions
-    let mut rdr = csv::Reader::from_path(filepath)?;
+    let filepath = filepath_from_chat(chat);
+    let mut rdr = csv::Reader::from_path(&filepath)?;
     let iter = rdr.deserialize();
+    let bot_mention = std::env::var("BOT_MENTION").unwrap_or_default();
 
+    debug!("Parsing {path}", path = &filepath);
+    let mut result_message = String::new(); // the final message with space-separated mentions
     for result in iter {
         let user: MyUser = result?;
-        result_message.push_str(&user.get_mention());
+        let mention = user.get_mention();
+        if mention == bot_mention {
+            continue;
+        }
+        result_message.push_str(&mention);
         result_message.push(' ');
     }
 
